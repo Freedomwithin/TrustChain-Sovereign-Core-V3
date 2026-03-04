@@ -21,14 +21,14 @@ const IDL = require('../../idl/trustchain_notary.json');
 
 // Imports from the existing project structure
 // @ts-ignore
-import { calculateGini, calculateHHI, calculateVoterWeight } from '../../integrityEngine.js';
+import { calculateGini, calculateHHI, calculateVoterWeight } from '../services/integrityEngine.ts';
 // FIXED: Use correct relative path to services directory (../services instead of ../../services)
 // @ts-ignore
-import { getFairScore, calculateTotalScore } from '../services/reputationEngine.js';
-import { PRIORITY_FEE_CONFIG } from '../config/constants.js';
+import { getFairScore, calculateTotalScore } from '../services/reputationEngine.ts';
+import { PRIORITY_FEE_CONFIG } from '../config/constants.ts';
 
 // The new gRPC-based data source
-import { fetchWalletData } from '../services/solana.js';
+import { fetchWalletData } from '../services/solana.ts';
 
 // --- Replicate the exact setup logic from server.ts ---
 let NOTARY_KEYPAIR: Keypair | null = null;

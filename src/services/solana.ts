@@ -51,13 +51,32 @@ export class SolanaGRPCService {
         try {
             console.log(`Connecting to Yellowstone gRPC at ${GRPC_URL}...`);
 
-            this.client.getVersion().then((version: any) => {
+            // Await getVersion to ensure handshake is solid
+            try {
+                const version = await this.client.getVersion();
                 console.log("gRPC Version:", version);
-            }).catch((err: any) => {
+            } catch (err: any) {
                 console.error("gRPC Connection Error (Version check):", err.message);
-            });
+                // We proceed to subscribe as the client might still be able to connect
+            }
 
-            this.stream = await this.client.subscribe();
+            // Retry subscribe if it fails with 'Client not connected'
+            let retryCount = 0;
+            const maxRetries = 3;
+            while (retryCount < maxRetries) {
+                try {
+                    this.stream = await this.client.subscribe();
+                    break;
+                } catch (err: any) {
+                    if (err.message?.includes('Client not connected') && retryCount < maxRetries - 1) {
+                        retryCount++;
+                        console.warn(`gRPC subscribe failed (Client not connected), retrying ${retryCount}/${maxRetries}...`);
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    } else {
+                        throw err;
+                    }
+                }
+            }
 
             this.stream.on("data", (data: any) => {
                 this.handleStreamData(data);
