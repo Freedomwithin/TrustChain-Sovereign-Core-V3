@@ -1,0 +1,70 @@
+{
+    "version": "0.1.0",
+    "name": "trustchain_notary",
+    "instructions": [
+        {
+            "name": "updateIntegrity",
+            "accounts": [
+                {
+                    "name": "notaryAccount",
+                    "isMut": true,
+                    "isSigner": false
+                },
+                {
+                    "name": "notary",
+                    "isMut": true,
+                    "isSigner": true
+                },
+                {
+                    "name": "targetUser",
+                    "isMut": false,
+                    "isSigner": false
+                },
+                {
+                    "name": "systemProgram",
+                    "isMut": false,
+                    "isSigner": false
+                }
+            ],
+            "args": [
+                {
+                    "name": "giniScore",
+                    "type": "u16"
+                },
+                {
+                    "name": "hhiScore",
+                    "type": "u16"
+                },
+                {
+                    "name": "status",
+                    "type": "u8"
+                }
+            ]
+        }
+    ],
+    "accounts": [
+        {
+            "name": "NotaryAccount",
+            "type": {
+                "kind": "struct",
+                "fields": [
+                    {
+                        "name": "giniScore",
+                        "type": "u16"
+                    },
+                    {
+                        "name": "hhiScore",
+                        "type": "u16"
+                    },
+                    {
+                        "name": "status",
+                        "type": "u8"
+                    }
+                ]
+            }
+        }
+    ],
+    "metadata": {
+        "address": "CvEK7knkMGSE4jw9HxNjHndxdChKW6XAxN4wThk3dkLT"
+    }
+}

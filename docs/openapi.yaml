@@ -1,0 +1,73 @@
+openapi: 3.0.0
+info:
+  title: TrustChain Sentinel API
+  version: 2.1.0
+  description: Public API for TrustChain Sentinel - Sovereign AI-Driven Sybil Resistance.
+servers:
+  - url: https://trustchain-2-backend.vercel.app
+    description: Mainnet Production
+paths:
+  /api/verify/{address}:
+    get:
+      summary: Verify Wallet Integrity
+      description: Returns the integrity decision, scores, and status for a given Solana wallet address.
+      parameters:
+        - name: address
+          in: path
+          required: true
+          description: Base58 Solana Wallet Address
+          schema:
+            type: string
+            pattern: '^[1-9A-HJ-NP-Za-km-z]{32,44}$'
+            example: '5U3bH5b6t5yQ'
+      responses:
+        '200':
+          description: Successful verification
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegrityDecision'
+        '400':
+          description: Invalid Address Format
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: 'Invalid Solana Address'
+        '429':
+          description: Rate Limit Exceeded
+        '503':
+          description: Sentinel Offline / RPC Error
+components:
+  schemas:
+    IntegrityDecision:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [VERIFIED, PROBATIONARY, SYBIL]
+          description: The overall integrity status.
+        scores:
+          type: object
+          properties:
+            gini:
+              type: number
+              format: float
+              description: Gini coefficient (inequality score).
+            hhi:
+              type: number
+              format: float
+              description: Herfindahl-Hirschman Index (concentration score).
+            syncIndex:
+              type: number
+              format: float
+              description: Temporal synchronization index.
+        reason:
+          type: string
+          description: Explanation for the decision.
+        latencyMs:
+          type: integer
+          description: Processing latency in milliseconds.
