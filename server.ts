@@ -274,7 +274,7 @@ app.get('/api/verify/:wallet', async (req: any, res: any) => {
 });
 
 // Wallet verification + on-chain notarization
-app.post('/api/verify', async (req: any, res: any) => {
+app.post('/api/verify_old', async (req: any, res: any) => {
     const { address } = req.body;
     const start = performance.now();
 
@@ -370,4 +370,6 @@ app.post('/api/verify', async (req: any, res: any) => {
     }
 });
 
+import { verifyRouter } from './src/api/verify.js';
+app.use('/api/verify', verifyRouter);
 export default app;
