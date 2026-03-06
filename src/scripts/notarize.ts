@@ -32,6 +32,10 @@ async function main() {
             process.exit(1);
         }
         const notarySecret = JSON.parse(fs.readFileSync(notaryJsonPath, 'utf-8'));
+        if (!Array.isArray(notarySecret) || notarySecret.length !== 64 || !notarySecret.every(Number.isInteger)) {
+            console.error("❌ ERROR: notary.json must contain a valid 64-integer array representing the secret key.");
+            process.exit(1);
+        }
         const notaryKeypair = Keypair.fromSecretKey(new Uint8Array(notarySecret));
 
         // 3. RPC setup using Mainnet-Beta Helius URL from .env
@@ -58,7 +62,11 @@ async function main() {
         console.log(`🏛️ Notary PublicKey: ${notaryKeypair.publicKey.toBase58()}`);
         console.log(`🔐 Integrity PDA: ${integrityPda.toBase58()}`);
 
-        const targetUserStr = process.env.TARGET_WALLET_ADDRESS || Keypair.generate().publicKey.toBase58();
+        const targetUserStr = process.env.TARGET_WALLET_ADDRESS;
+        if (!targetUserStr) {
+            console.error("❌ ERROR: TARGET_WALLET_ADDRESS is not set in .env");
+            process.exit(1);
+        }
         const targetUser = new PublicKey(targetUserStr);
 
         console.log(`🚀 Sending initialization transaction...`);
@@ -78,17 +86,21 @@ async function main() {
         console.log(`✅ Success! Transaction Signature: ${tx}`);
     } catch (error: any) {
         // 6. Graceful skip for "Account already exists" error
-        const errorString = error.toString();
-
-        // This checks for the typical custom program error related to already-initialized accounts
-        // or the specific string "Account already exists"
-        if (
-            errorString.includes("already in use") ||
-            errorString.includes("Account already exists") ||
-            errorString.includes("0x0") // Anchor error code for instruction fallback or custom error often related to initialization
-        ) {
-            console.log(`⚠️ Graceful Skip: Notary integrity account already exists for ${errorString}`);
-            return;
+        if (error instanceof anchor.AnchorError) {
+            if (error.error.errorCode.code === "AccountAlreadyInitialized" || error.error.errorCode.number === 0) {
+                console.log(`⚠️ Graceful Skip: Notary integrity account already exists (AnchorError).`);
+                return;
+            }
+        } else {
+            const errorString = error.toString();
+            if (
+                errorString.includes("already in use") ||
+                errorString.includes("Account already exists") ||
+                errorString.includes("custom program error: 0x0")
+            ) {
+                console.log(`⚠️ Graceful Skip: Notary integrity account already exists.`);
+                return;
+            }
         }
 
         console.error("❌ Unexpected Error:", error);
