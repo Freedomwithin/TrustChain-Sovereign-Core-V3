@@ -23,7 +23,7 @@ dotenv.config();
 
 // ---- V3 Service Imports ----
 // Note: Using .ts extensions for compatibility with node --experimental-strip-types
-import { verifyRouter } from './src/api/verify.ts';
+import { verifyRouter } from './src/api/verify.js';
 
 // ---- Notary Initialization ----
 let NOTARY_KEYPAIR: Keypair | null = null;

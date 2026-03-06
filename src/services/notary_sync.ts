@@ -36,8 +36,8 @@ for (const envPath of envPaths) {
 const IDL = require('../../idl/trustchain_notary.json');
 
 // 3. Logic Imports
-import { calculateGini, calculateHHI } from './integrityEngine.ts';
-import { fetchWithRetry } from './rpc.ts';
+import { calculateGini, calculateHHI } from './integrityEngine.js';
+import { fetchWithRetry } from './rpc.js';
 
 // 4. Resolve Notary Identity (The Signer/Authority)
 const secretString = process.env.NOTARY_SECRET || "";

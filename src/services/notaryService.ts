@@ -27,10 +27,10 @@ import * as anchor from '@coral-xyz/anchor';
 const { Program, AnchorProvider, Wallet } = anchor;
 
 // @ts-ignore (Assuming these are in your services/ folder)
-import { calculateGini, calculateHHI } from './integrityEngine.ts';
+import { calculateGini, calculateHHI } from './integrityEngine.js';
 // @ts-ignore (Assuming this is in your utils/ folder)
-import { fetchWithRetry } from './rpc.ts';
-import { PRIORITY_FEE_CONFIG } from '../config/constants.ts';
+import { fetchWithRetry } from './rpc.js';
+import { PRIORITY_FEE_CONFIG } from '../config/constants.js';
 
 // 4. Resolve Environment (The Sentinel loading logic)
 const envPaths = [
