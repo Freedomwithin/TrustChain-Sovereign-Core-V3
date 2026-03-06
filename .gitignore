@@ -53,6 +53,7 @@ Thumbs.db
 *.d.ts.map
 
 # Solana / Anchor
+notary.json
 /on-chain/trustchain-notary/target
 /on-chain/trustchain-notary/test-ledger
 /on-chain/trustchain-notary/.anchor
