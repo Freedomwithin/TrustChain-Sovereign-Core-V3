@@ -53,21 +53,21 @@ async function main() {
         const provider = new AnchorProvider(connection, wallet, { preflightCommitment: "confirmed" });
         const program = new Program(IDL, PROGRAM_ID, provider);
 
-        // 5. Calculate "integrity" PDA for notary
-        const [integrityPda] = PublicKey.findProgramAddressSync(
-            [Buffer.from("integrity"), notaryKeypair.publicKey.toBuffer()],
-            PROGRAM_ID
-        );
-
-        console.log(`🏛️ Notary PublicKey: ${notaryKeypair.publicKey.toBase58()}`);
-        console.log(`🔐 Integrity PDA: ${integrityPda.toBase58()}`);
-
         const targetUserStr = process.env.TARGET_WALLET_ADDRESS;
         if (!targetUserStr) {
             console.error("❌ ERROR: TARGET_WALLET_ADDRESS is not set in .env");
             process.exit(1);
         }
         const targetUser = new PublicKey(targetUserStr);
+
+        // 5. Calculate "notary" PDA for notary
+        const [integrityPda] = PublicKey.findProgramAddressSync(
+            [Buffer.from("notary"), targetUser.toBuffer()],
+            PROGRAM_ID
+        );
+
+        console.log(`🏛️ Notary PublicKey: ${notaryKeypair.publicKey.toBase58()}`);
+        console.log(`🔐 Integrity PDA: ${integrityPda.toBase58()}`);
 
         console.log(`🚀 Sending initialization transaction...`);
 
