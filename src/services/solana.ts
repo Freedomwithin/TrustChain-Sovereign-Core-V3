@@ -1,4 +1,6 @@
-import Client, { CommitmentLevel } from "@triton-one/yellowstone-grpc";
+import yellowstone from "@triton-one/yellowstone-grpc";
+const Client = (yellowstone as any).default ? (yellowstone as any).default : yellowstone;
+const CommitmentLevel = (yellowstone as any).CommitmentLevel;
 import { Connection, PublicKey } from "@solana/web3.js";
 import * as dotenv from "dotenv";
 

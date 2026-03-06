@@ -1,5 +1,5 @@
-import { getVerificationData } from '../server';
-import { calculateVoterWeight } from '../integrityEngine';
+import { getVerificationData } from '../src/api/verify.js';
+import { calculateVoterWeight } from '../src/services/integrityEngine.js';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
