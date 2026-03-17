@@ -13,7 +13,6 @@ dotenv.config();
 const { Program, AnchorProvider, Wallet } = anchor;
 
 // Need to define this properly for TS to accept import.meta in some configurations
-// or just use typical commonjs workarounds for TS if needed
 const require = createRequire(import.meta.url as string);
 const __filename = fileURLToPath(import.meta.url as string);
 const __dirname = path.dirname(__filename);
@@ -22,13 +21,17 @@ const IDL = require('../../idl/trustchain_notary.json');
 // Imports from the existing project structure
 // @ts-ignore
 import { calculateGini, calculateHHI, calculateVoterWeight } from '../services/integrityEngine.js';
-// FIXED: Use correct relative path to services directory (../services instead of ../../services)
 // @ts-ignore
 import { getFairScore, calculateTotalScore } from '../services/reputationEngine.js';
 import { PRIORITY_FEE_CONFIG } from '../config/constants.js';
 
 // The new gRPC-based data source
 import { fetchWalletData } from '../services/solana.js';
+
+// --- Gateway Cache & Coalescing ---
+const responseCache = new Map<string, { data: any, timestamp: number }>();
+const inFlightRequests = new Map<string, Promise<any>>();
+const CACHE_TTL = 15000; // 15 seconds edge cache
 
 // --- Replicate the exact setup logic from server.ts ---
 let NOTARY_KEYPAIR: Keypair | null = null;
@@ -61,11 +64,8 @@ const validateAddress = (address: string): boolean => {
 };
 
 export const getVerificationData = async (address: string) => {
-    // THIS IS THE KEY CHANGE - Use gRPC stream data instead of standard RPC polling
-    // This will hydrate from standard RPC initially if needed, then use gRPC updates
     const data = await fetchWalletData(address);
 
-    // Fallback behavior if gRPC hasn't seen this wallet yet
     if (data.transactions.length === 0 && data.positions.length === 0) {
         console.log(`Warning: No gRPC/RPC data available yet for ${address}`);
     }
@@ -73,7 +73,6 @@ export const getVerificationData = async (address: string) => {
     let gini = calculateGini(data.transactions);
     const hhi = calculateHHI(data.positions);
 
-    // Apply n/(n-1) Gini correction
     const n = data.transactions.length;
     if (n > 1) {
         gini = gini * (n / (n - 1));
@@ -83,7 +82,6 @@ export const getVerificationData = async (address: string) => {
     const hhiScore = Math.min(Math.floor(hhi * 10000), 65535);
     const txCount = data.signatures.length;
 
-    // Status logic
     let status: string;
     if (txCount < 3 || data.transactions.length < 2) {
         status = 'PROBATIONARY';
@@ -97,12 +95,9 @@ export const getVerificationData = async (address: string) => {
 
     const statusNum = status === 'VERIFIED' ? 0 : status === 'PROBATIONARY' ? 1 : 2;
 
-    // Weighted Logic Integration
     const fairScore = await getFairScore(address);
-    // TrustChain Score: (1 - Gini) * 100
     let trustChainScore = Math.max(0, Math.round((1 - Math.min(gini, 1)) * 100));
 
-    // Fix: If insufficient transaction data, set TrustChain Score to 0 (baseline)
     if (data.transactions.length < 2) {
         trustChainScore = 0;
     }
@@ -129,7 +124,6 @@ verifyRouter.post('/', async (req: any, res: any) => {
     const { address } = req.body;
     const start = performance.now();
 
-    // Static response for pool IDs to prevent HUD errors
     if (address && typeof address === 'string' && (address.startsWith('pool_') || address.includes('sol-'))) {
         return res.json({
             status: 'VERIFIED',
@@ -150,7 +144,32 @@ verifyRouter.post('/', async (req: any, res: any) => {
         });
     }
 
-    try {
+    // 1. Check Edge Cache
+    const cached = responseCache.get(address);
+    if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
+        return res.json({ 
+            ...cached.data, 
+            gateway: 'HIT', 
+            latencyMs: Math.round(performance.now() - start) 
+        });
+    }
+
+    // 2. Request Coalescing (Request deduplication at the edge)
+    if (inFlightRequests.has(address)) {
+        try {
+            const data = await inFlightRequests.get(address);
+            return res.json({ 
+                ...data, 
+                gateway: 'COALESCED', 
+                latencyMs: Math.round(performance.now() - start) 
+            });
+        } catch (e) {
+            // If the shared request failed, we'll try a fresh one below
+        }
+    }
+
+    // 3. Process Request (if not cached/coalesced)
+    const processPromise = (async () => {
         const {
             gini,
             hhi,
@@ -164,7 +183,6 @@ verifyRouter.post('/', async (req: any, res: any) => {
             totalScore
         } = await getVerificationData(address);
 
-        // On-chain notarization
         let signature: string | null = null;
         try {
             const wallet = new Wallet(NOTARY_KEYPAIR);
@@ -195,14 +213,12 @@ verifyRouter.post('/', async (req: any, res: any) => {
 
             console.log(`Notarized ${address}: ${signature}`);
         } catch (notaryErr: any) {
-            // Don't fail the whole request if notarization fails
             console.warn(`Notarization skipped: ${notaryErr.message}`);
         }
 
-        const end = performance.now();
         const weightMultiplier = calculateVoterWeight(totalScore, hhi);
 
-        return res.json({
+        const responseData = {
             status,
             scores: {
                 gini,
@@ -218,15 +234,32 @@ verifyRouter.post('/', async (req: any, res: any) => {
                 tier: weightMultiplier >= 1.5 ? "Steward" : weightMultiplier >= 1.0 ? "Verified" : "Probationary"
             },
             txCount,
-            signature,
-            latencyMs: Math.round(end - start)
-        });
+            signature
+        };
 
+        // Update Cache
+        responseCache.set(address, { data: responseData, timestamp: Date.now() });
+        return responseData;
+    })();
+
+    inFlightRequests.set(address, processPromise);
+
+    try {
+        const data = await processPromise;
+        return res.json({
+            ...data,
+            gateway: 'MISS',
+            latencyMs: Math.round(performance.now() - start)
+        });
     } catch (error: any) {
         console.error("Verification error:", error);
         return res.status(500).json({
             error: 'Internal Server Error',
             details: error instanceof Error ? error.message : 'Unknown error'
         });
+    } finally {
+        if (inFlightRequests.get(address) === processPromise) {
+            inFlightRequests.delete(address);
+        }
     }
 });
