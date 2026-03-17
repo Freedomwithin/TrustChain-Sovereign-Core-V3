@@ -3,18 +3,15 @@ import { PublicKey, SystemProgram, ComputeBudgetProgram, Connection, Keypair } f
 import * as anchor from '@coral-xyz/anchor';
 import { performance } from 'perf_hooks';
 import * as dotenv from 'dotenv';
-import { createRequire } from 'module';
-import * as path from 'path';
-import { fileURLToPath } from 'url';
+
+
+
 
 dotenv.config();
 
 const { Program, AnchorProvider, Wallet } = anchor;
 
-const require = createRequire(import.meta.url as string);
-const __filename = fileURLToPath(import.meta.url as string);
-const __dirname = path.dirname(__filename);
-const IDL = require('../../idl/trustchain_notary.json');
+import { IDL } from '../idl/trustchain_notary.js';
 
 // @ts-ignore
 import { calculateGini, calculateHHI, calculateVoterWeight } from '../services/integrityEngine.js';
