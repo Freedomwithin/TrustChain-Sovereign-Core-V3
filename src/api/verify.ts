@@ -58,12 +58,7 @@ const validateAddress = (address: string): boolean => {
 };
 
 export const getVerificationData = async (address: string) => {
-    console.log(`[TrustChain] Fetching data for ${address}...`);
     const data = await fetchWalletData(address);
-
-    if (data.transactions.length === 0 && data.positions.length === 0) {
-        console.warn(`[TrustChain] No transactions found for ${address}`);
-    }
 
     let gini = calculateGini(data.transactions);
     const hhi = calculateHHI(data.positions);
@@ -119,8 +114,6 @@ verifyRouter.post('/', async (req: any, res: any) => {
     const { address, walletAddress } = req.body;
     const targetAddress = address || walletAddress;
     const start = performance.now();
-
-    console.log(`[TrustChain] Request received for ${targetAddress}`);
 
     if (targetAddress && typeof targetAddress === 'string' && (targetAddress.startsWith('pool_') || targetAddress.includes('sol-'))) {
         res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=120, public');
@@ -193,7 +186,6 @@ verifyRouter.post('/', async (req: any, res: any) => {
                 PROGRAM_ID
             );
 
-            console.log(`[TrustChain] Notarizing ${targetAddress} on-chain...`);
             signature = await program.methods
                 .updateIntegrity(giniScore, hhiScore, statusNum)
                 .accounts({
@@ -208,9 +200,9 @@ verifyRouter.post('/', async (req: any, res: any) => {
                 .signers([NOTARY_KEYPAIR!])
                 .rpc();
 
-            console.log(`[TrustChain] Success! Signature: ${signature}`);
+            console.log(`Notarized ${targetAddress}: ${signature}`);
         } catch (notaryErr: any) {
-            console.warn(`[TrustChain] Notarization skipped/failed: ${notaryErr.message}`);
+            console.warn(`Notarization skipped: ${notaryErr.message}`);
         }
 
         const weightMultiplier = calculateVoterWeight(totalScore, hhi);
@@ -249,7 +241,7 @@ verifyRouter.post('/', async (req: any, res: any) => {
             latencyMs: Math.round(performance.now() - start)
         });
     } catch (error: any) {
-        console.error("[TrustChain] Global Error:", error);
+        console.error("Verification error:", error);
         return res.status(500).json({
             error: 'Internal Server Error',
             details: error instanceof Error ? error.message : 'Unknown error'

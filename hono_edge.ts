@@ -81,11 +81,11 @@ app.post('/api/verify', async (c) => {
         });
 
         if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
+            const errData: any = await response.json().catch(() => ({}));
             throw new Error(errData.error || 'Backend Error');
         }
 
-        const data = await response.json();
+        const data: any = await response.json();
         
         // Update Cache
         responseCache.set(address, { data, timestamp: Date.now() });
@@ -95,7 +95,7 @@ app.post('/api/verify', async (c) => {
     inFlightRequests.set(address, fetchPromise);
 
     try {
-        const data = await fetchPromise;
+        const data: any = await fetchPromise;
         return c.json({ 
             ...data, 
             gateway: 'MISS', 
