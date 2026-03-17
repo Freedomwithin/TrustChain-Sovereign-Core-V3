@@ -175,7 +175,7 @@ verifyRouter.post('/', async (req: any, res: any) => {
             const provider = new AnchorProvider(connection, wallet, {
                 preflightCommitment: "confirmed"
             });
-            const program = new Program(IDL, PROGRAM_ID, provider);
+            const program = new Program(IDL as any, PROGRAM_ID, provider);
 
             const targetPubkey = new PublicKey(targetAddress);
             const [userIntegrityPda] = PublicKey.findProgramAddressSync(
