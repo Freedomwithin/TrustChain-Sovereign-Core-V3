@@ -7,37 +7,31 @@ import { createRequire } from 'module';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 
-// Setup basic requirements that match server.ts
 dotenv.config();
 
 const { Program, AnchorProvider, Wallet } = anchor;
 
-// Need to define this properly for TS to accept import.meta in some configurations
 const require = createRequire(import.meta.url as string);
 const __filename = fileURLToPath(import.meta.url as string);
 const __dirname = path.dirname(__filename);
 const IDL = require('../../idl/trustchain_notary.json');
 
-// Imports from the existing project structure
 // @ts-ignore
 import { calculateGini, calculateHHI, calculateVoterWeight } from '../services/integrityEngine.js';
 // @ts-ignore
 import { getFairScore, calculateTotalScore } from '../services/reputationEngine.js';
 import { PRIORITY_FEE_CONFIG } from '../config/constants.js';
 
-// The new gRPC-based data source
 import { fetchWalletData } from '../services/solana.js';
 
-// --- Gateway Cache & Coalescing ---
 const responseCache = new Map<string, { data: any, timestamp: number }>();
 const inFlightRequests = new Map<string, Promise<any>>();
-const CACHE_TTL = 15000; // 15 seconds edge cache
+const CACHE_TTL = 15000;
 
-// --- Replicate the exact setup logic from server.ts ---
 let NOTARY_KEYPAIR: Keypair | null = null;
 try {
     const secretString = process.env.NOTARY_SECRET || "";
-    const cleanString = secretString.replace(/[\[\]"\s]/g, '');
+    const cleanString = secretString.replace(/[\[\\]"\s]/g, '');
     const secretBytes = Uint8Array.from(cleanString.split(',').map(Number));
     NOTARY_KEYPAIR = Keypair.fromSecretKey(secretBytes);
 } catch (e) {
@@ -64,10 +58,11 @@ const validateAddress = (address: string): boolean => {
 };
 
 export const getVerificationData = async (address: string) => {
+    console.log(`[TrustChain] Fetching data for ${address}...`);
     const data = await fetchWalletData(address);
 
     if (data.transactions.length === 0 && data.positions.length === 0) {
-        console.log(`Warning: No gRPC/RPC data available yet for ${address}`);
+        console.warn(`[TrustChain] No transactions found for ${address}`);
     }
 
     let gini = calculateGini(data.transactions);
@@ -121,10 +116,14 @@ export const getVerificationData = async (address: string) => {
 export const verifyRouter = express.Router();
 
 verifyRouter.post('/', async (req: any, res: any) => {
-    const { address } = req.body;
+    const { address, walletAddress } = req.body;
+    const targetAddress = address || walletAddress;
     const start = performance.now();
 
-    if (address && typeof address === 'string' && (address.startsWith('pool_') || address.includes('sol-'))) {
+    console.log(`[TrustChain] Request received for ${targetAddress}`);
+
+    if (targetAddress && typeof targetAddress === 'string' && (targetAddress.startsWith('pool_') || targetAddress.includes('sol-'))) {
+        res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=120, public');
         return res.json({
             status: 'VERIFIED',
             scores: {
@@ -133,7 +132,7 @@ verifyRouter.post('/', async (req: any, res: any) => {
         });
     }
 
-    if (!validateAddress(address)) {
+    if (!validateAddress(targetAddress)) {
         return res.status(400).json({ status: 'INVALID_ADDRESS' });
     }
 
@@ -144,9 +143,9 @@ verifyRouter.post('/', async (req: any, res: any) => {
         });
     }
 
-    // 1. Check Edge Cache
-    const cached = responseCache.get(address);
+    const cached = responseCache.get(targetAddress);
     if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
+        res.setHeader('Cache-Control', 's-maxage=15, stale-while-revalidate=30, public');
         return res.json({ 
             ...cached.data, 
             gateway: 'HIT', 
@@ -154,21 +153,18 @@ verifyRouter.post('/', async (req: any, res: any) => {
         });
     }
 
-    // 2. Request Coalescing (Request deduplication at the edge)
-    if (inFlightRequests.has(address)) {
+    if (inFlightRequests.has(targetAddress)) {
         try {
-            const data = await inFlightRequests.get(address);
+            const data = await inFlightRequests.get(targetAddress);
+            res.setHeader('Cache-Control', 's-maxage=15, stale-while-revalidate=30, public');
             return res.json({ 
                 ...data, 
                 gateway: 'COALESCED', 
                 latencyMs: Math.round(performance.now() - start) 
             });
-        } catch (e) {
-            // If the shared request failed, we'll try a fresh one below
-        }
+        } catch (e) {}
     }
 
-    // 3. Process Request (if not cached/coalesced)
     const processPromise = (async () => {
         const {
             gini,
@@ -181,39 +177,40 @@ verifyRouter.post('/', async (req: any, res: any) => {
             fairScore,
             trustChainScore,
             totalScore
-        } = await getVerificationData(address);
+        } = await getVerificationData(targetAddress);
 
         let signature: string | null = null;
         try {
-            const wallet = new Wallet(NOTARY_KEYPAIR);
+            const wallet = new Wallet(NOTARY_KEYPAIR!);
             const provider = new AnchorProvider(connection, wallet, {
                 preflightCommitment: "confirmed"
             });
             const program = new Program(IDL, PROGRAM_ID, provider);
 
-            const targetPubkey = new PublicKey(address);
+            const targetPubkey = new PublicKey(targetAddress);
             const [userIntegrityPda] = PublicKey.findProgramAddressSync(
                 [Buffer.from("notary"), targetPubkey.toBuffer()],
                 PROGRAM_ID
             );
 
+            console.log(`[TrustChain] Notarizing ${targetAddress} on-chain...`);
             signature = await program.methods
                 .updateIntegrity(giniScore, hhiScore, statusNum)
                 .accounts({
                     notaryAccount: userIntegrityPda,
-                    notary: NOTARY_KEYPAIR.publicKey,
+                    notary: NOTARY_KEYPAIR!.publicKey,
                     targetUser: targetPubkey,
                     systemProgram: SystemProgram.programId,
                 })
                 .preInstructions([
                     ComputeBudgetProgram.setComputeUnitPrice(PRIORITY_FEE_CONFIG)
                 ])
-                .signers([NOTARY_KEYPAIR])
+                .signers([NOTARY_KEYPAIR!])
                 .rpc();
 
-            console.log(`Notarized ${address}: ${signature}`);
+            console.log(`[TrustChain] Success! Signature: ${signature}`);
         } catch (notaryErr: any) {
-            console.warn(`Notarization skipped: ${notaryErr.message}`);
+            console.warn(`[TrustChain] Notarization skipped/failed: ${notaryErr.message}`);
         }
 
         const weightMultiplier = calculateVoterWeight(totalScore, hhi);
@@ -237,29 +234,29 @@ verifyRouter.post('/', async (req: any, res: any) => {
             signature
         };
 
-        // Update Cache
-        responseCache.set(address, { data: responseData, timestamp: Date.now() });
+        responseCache.set(targetAddress, { data: responseData, timestamp: Date.now() });
         return responseData;
     })();
 
-    inFlightRequests.set(address, processPromise);
+    inFlightRequests.set(targetAddress, processPromise);
 
     try {
         const data = await processPromise;
+        res.setHeader('Cache-Control', 's-maxage=15, stale-while-revalidate=30, public');
         return res.json({
             ...data,
             gateway: 'MISS',
             latencyMs: Math.round(performance.now() - start)
         });
     } catch (error: any) {
-        console.error("Verification error:", error);
+        console.error("[TrustChain] Global Error:", error);
         return res.status(500).json({
             error: 'Internal Server Error',
             details: error instanceof Error ? error.message : 'Unknown error'
         });
     } finally {
-        if (inFlightRequests.get(address) === processPromise) {
-            inFlightRequests.delete(address);
+        if (inFlightRequests.get(targetAddress) === processPromise) {
+            inFlightRequests.delete(targetAddress);
         }
     }
 });
