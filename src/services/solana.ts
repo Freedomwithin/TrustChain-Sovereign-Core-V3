@@ -1,8 +1,20 @@
-import yellowstone from "@triton-one/yellowstone-grpc";
-const Client = (yellowstone as any).default ? (yellowstone as any).default : yellowstone;
-const CommitmentLevel = (yellowstone as any).CommitmentLevel;
-import { Connection, PublicKey } from "@solana/web3.js";
-import * as dotenv from "dotenv";
+const IS_VERCEL = process.env.VERCEL === '1';
+import { Connection, PublicKey } from '@solana/web3.js';
+import * as dotenv from 'dotenv';
+
+// Conditional import to avoid Vercel ESM/CJS crashes
+let Client: any = null;
+let CommitmentLevel: any = null;
+
+if (!IS_VERCEL) {
+    try {
+        const yellowstone = await import('@triton-one/yellowstone-grpc');
+        Client = (yellowstone as any).default ? (yellowstone as any).default : yellowstone;
+        CommitmentLevel = (yellowstone as any).CommitmentLevel;
+    } catch (e) {
+        console.warn('gRPC library not found or failed to load.');
+    }
+}
 
 // Import fetchWithRetry logic from server if it exists or define a simple one
 // To avoid circular dependencies, we'll implement a simple fetch function for initial data
@@ -43,7 +55,7 @@ export class SolanaGRPCService {
     constructor() {
         // Handle potential differences in ESM/CJS interop for the default export
         const ClientConstructor = (Client as any).default || Client;
-        this.client = new ClientConstructor(GRPC_URL, undefined, undefined);
+        if (!IS_VERCEL && ClientConstructor) { this.client = new ClientConstructor(GRPC_URL, undefined, undefined); }
     }
 
     public async connect() {
@@ -387,7 +399,7 @@ export class SolanaGRPCService {
 
 export const grpcService = new SolanaGRPCService();
 // Start the connection immediately when the module is imported
-grpcService.connect();
+if (!IS_VERCEL) { grpcService.connect(); }
 
 // To maintain compatibility with existing functionality
 export const fetchWalletData = async (address: string) => {
